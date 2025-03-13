@@ -3,19 +3,84 @@
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/PassPlugin.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/IR/Dominators.h"  
+#include "llvm/Analysis/ValueTracking.h"
 
 using namespace llvm;
 
 namespace {
+
+bool isSafeToHoist(Instruction &I, Loop *L, DominatorTree &DT) {
+  if (!isSafeToSpeculativelyExecute(&I)) return false;
+
+  SmallVector<BasicBlock *, 8> exitBlocks;
+  L->getExitBlocks(exitBlocks);
+  for (BasicBlock *ExitBB : exitBlocks) {
+      if (!DT.dominates(I.getParent(), ExitBB)) return false;
+  }
+
+  return true;
+}
+
+
+bool isLoopInvariant(Instruction &I, Loop *L) {
+  if (!I.isBinaryOp() && !isa<SelectInst>(&I) && !isa<CastInst>(&I) && 
+      !isa<GetElementPtrInst>(I)) {
+      return false;
+  }
+
+  for (Value *Op : I.operands()) {
+      if (!isa<Constant>(Op) && L->contains(dyn_cast<Instruction>(Op))) {
+          return false;
+      }
+  }
+  return true;
+}
+
+
+void hoistLoopInvariants(Loop *L, DominatorTree &DT) {
+  BasicBlock *Preheader = L->getLoopPreheader();
+  if (!Preheader) return;
+
+  SmallVector<Instruction *, 8> ToHoist;
+
+  for (BasicBlock *BB : L->blocks()) {
+      if (L->getHeader() == BB) continue;
+
+      for (Instruction &I : *BB) {
+          if (isLoopInvariant(I, L) && isSafeToHoist(I, L, DT)) {
+              errs() << "Hoistable: " << I << "\n";
+              ToHoist.push_back(&I);
+          }
+      }
+  }
+
+  for (Instruction *I : ToHoist) {
+      I->moveBefore(Preheader->getTerminator());
+      errs() << "Hoisted: " << *I << "\n";
+  }
+}
+
 
 // New PM implementation
 struct LoopPass : PassInfoMixin<LoopPass> {
   // Main entry point, takes IR unit to run the pass on (&F) and the
   // corresponding pass manager (to be queried if need be)
   PreservedAnalyses run(Function &F, FunctionAnalysisManager &FAM) {
-    errs() << "hey ;)\n";
-    // get the loop information analysis passes
-    auto& li = FAM.getResult<LoopAnalysis>(F);
+    errs() << "Running LICM on function: " << F.getName() << "\n";
+
+    // Get loop information and dominator tree
+    auto &LI = FAM.getResult<LoopAnalysis>(F);
+    auto &DT = FAM.getResult<DominatorTreeAnalysis>(F);
+
+    for (Loop *L : LI) {
+        if (!L->getLoopPreheader()) {
+            errs() << "Skipping loop without preheader\n";
+            continue;
+        }
+        hoistLoopInvariants(L, DT);
+    }
+
     return PreservedAnalyses::all();
   }
 
