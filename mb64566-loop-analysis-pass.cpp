@@ -28,28 +28,15 @@ void get_loop_info(Loop *L, int &num_bbs, int &num_insns, int &num_atoms, int &n
   for (BasicBlock *BB : L->blocks()) {
       if (is_top_level(L, BB)) {
           num_bbs++;
-          if (isa<BranchInst>(BB->getTerminator())) {
-            errs() << "BranchInst: " << BB->getName() << "\n";
+          if (isa<ReturnInst>(BB->getTerminator())) {
               num_branches++;
           }
       }
       num_insns += BB->size();
       for (Instruction &I : *BB) {
-        errs() << I << " Opcode: " << I.getOpcode() << "\n";
           if (isa<AtomicRMWInst>(&I) || isa<AtomicCmpXchgInst>(&I)) {
               num_atoms++;
           }
-          // if (isa<BranchInst>(&I)) {
-          //     num_branches++;
-          // }
-        // std::string instrStr;
-        // llvm::raw_string_ostream rso(instrStr);
-        // I.print(rso);
-        // rso.flush();
-
-        // if (instrStr.rfind("br", 0) == 0) { // Check if it starts with "br"
-        //     llvm::errs() << "Branch Instruction Found: " << instrStr << "\n";
-        // }
       }
   }
 }
