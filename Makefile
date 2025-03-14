@@ -16,3 +16,7 @@ run-analysis: gen-ir build/libloop-analysis-pass.so
 
 run-opt: gen-ir build/libloop-opt-pass.so
 	opt -load-pass-plugin build/libloop-opt-pass.so -passes="mb64566-loop-opt-pass" <source.ll >/dev/null
+
+run-output-opt: gen-ir build/libloop-opt-pass.so
+	opt -S -load-pass-plugin build/libloop-opt-pass.so -passes="mb64566-loop-opt-pass" <source.ll > source.ll.tmp
+	mv source.ll.tmp source-opt.ll
